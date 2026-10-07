@@ -1,0 +1,95 @@
+name: "WebPilot Build & Release"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit -p .
+
+      - name: Build & package
+        run: |
+          pnpm build
+          pnpm package
+
+      - name: Prepare release info
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="v${VERSION}-build.${GITHUB_RUN_NUMBER}"
+          ASSET="webpilot-chrome-${TAG}.zip"
+
+          cp build/chrome-mv3-prod.zip "$ASSET"
+          # Stable file name for the latest WebPilot Chrome extension release.
+          cp build/chrome-mv3-prod.zip webpilot-chrome.zip
+
+          PREV_TAG=$(git tag --list 'v*-build.*' --sort=-creatordate | head -n 1)
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="${PREV_TAG}..HEAD"
+          else
+            RANGE="HEAD~20..HEAD"
+            git rev-parse -q --verify HEAD~20 >/dev/null || RANGE="HEAD"
+          fi
+
+          {
+            echo "## 更新内容"
+            echo
+            git log "$RANGE" --no-merges --pretty=format:'- %s (%h)'
+            echo
+            echo
+            echo "## 安装方法"
+            echo
+            echo "1. 下载下方的 \`${ASSET}\` 并解压"
+            echo "2. 打开 \`chrome://extensions\`（Edge 为 \`edge://extensions\`），开启「开发者模式」"
+            echo "3. 点击「加载已解压的扩展程序」，选择解压后的文件夹"
+            echo
+            echo "> 构建自 \`${SHORT_SHA}\`"
+          } > RELEASE_NOTES.md
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: WebPilot ${{ steps.meta.outputs.version }} (build ${{ github.run_number }})
+          body_path: RELEASE_NOTES.md
+          make_latest: true
+          files: |
+            ${{ steps.meta.outputs.asset }}
+            webpilot-chrome.zip

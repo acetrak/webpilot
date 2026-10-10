@@ -4,5 +4,10 @@ declare namespace chrome.sidePanel {
     windowId?: number;
   }
 
+  interface PanelBehavior {
+    openPanelOnActionClick?: boolean;
+  }
+
   function close(options: CloseOptions): Promise<void>;
+  function setPanelBehavior(behavior: PanelBehavior): Promise<void>;
 }

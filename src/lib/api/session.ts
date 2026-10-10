@@ -1,5 +1,14 @@
 import { client } from "@/lib/client";
-import { defer, filter, finalize, from, Observable, share } from "rxjs";
+import { defer, finalize, from, Observable, share } from "rxjs";
+
+type OpenCodeJsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | OpenCodeJsonValue[]
+  | { readonly [key: string]: OpenCodeJsonValue };
+type OpenCodeJsonObject = { readonly [key: string]: OpenCodeJsonValue };
 
 export type OpenCodeModel = Awaited<
   ReturnType<typeof client.model.list>
@@ -7,6 +16,10 @@ export type OpenCodeModel = Awaited<
 
 export type OpenCodeProvider = Awaited<
   ReturnType<typeof client.provider.list>
+>["data"][number];
+
+export type OpenCodeSkill = Awaited<
+  ReturnType<typeof client.skill.list>
 >["data"][number];
 
 export type OpenCodeModelSelection = {
@@ -35,14 +48,38 @@ type OpenCodeEvent = ReturnType<typeof client.event.subscribe> extends AsyncIter
   ? Event
   : never;
 
-type SessionTextDeltaEvent = Extract<
-  OpenCodeEvent,
-  { type: "session.text.delta" }
->;
+type OpenCodeStreamPart =
+  | {
+      type: "text";
+      id: string;
+      text: string;
+      status: { type: "running" | "complete" };
+    }
+  | {
+      type: "reasoning";
+      id: string;
+      text: string;
+      status: { type: "running" | "complete" };
+    }
+  | {
+      type: "tool-call";
+      toolCallId: string;
+      toolName: string;
+      args: OpenCodeJsonObject;
+      argsText: string;
+      result?: unknown;
+      isError?: boolean;
+    };
 
 export type OpenCodeStreamUpdate =
-  | { type: "text"; text: string }
-  | { type: "complete"; usage?: OpenCodeUsage };
+  | { type: "content"; content: OpenCodeStreamPart[] }
+  | { type: "form.created"; form: OpenCodeSessionForm }
+  | { type: "form.resolved"; formID: string }
+  | {
+      type: "complete";
+      usage?: OpenCodeUsage;
+      model?: OpenCodeModelReference;
+    };
 
 const openCodeEvents$ = defer(() => {
   const controller = new AbortController();
@@ -54,6 +91,48 @@ const openCodeEvents$ = defer(() => {
 export const checkOpenCodeConnection = () => {
   return client.server.info();
 };
+
+export const verifyOpenCodeCredentials = () => {
+  return client.model.list();
+};
+
+export type OpenCodeSessionForm = Awaited<
+  ReturnType<typeof client.session.form.list>
+>[number];
+export type OpenCodeFormField = OpenCodeSessionForm["fields"][number];
+export type OpenCodeFormAnswer = Parameters<
+  typeof client.session.form.reply
+>[0]["answer"];
+export type OpenCodeFormCreatePayload = Omit<
+  Parameters<typeof client.session.form.create>[0],
+  "sessionID"
+>;
+
+export function listOpenCodeSessionForms(sessionID: string) {
+  return client.session.form.list({ sessionID });
+}
+
+export function replyOpenCodeSessionForm(
+  sessionID: string,
+  formID: string,
+  answer: OpenCodeFormAnswer,
+) {
+  return client.session.form.reply({ sessionID, formID, answer });
+}
+
+export function createOpenCodeSessionForm(
+  sessionID: string,
+  input: OpenCodeFormCreatePayload,
+) {
+  return client.session.form.create({ sessionID, ...input });
+}
+
+export function cancelOpenCodeSessionForm(
+  sessionID: string,
+  formID: string,
+) {
+  return client.session.form.cancel({ sessionID, formID });
+}
 
 export async function listOpenCodeSessions() {
   const sessions = [];
@@ -168,6 +247,76 @@ export type OpenCodeUsage = Pick<
   OpenCodeAssistantMessage,
   "cost" | "tokens"
 >;
+export type OpenCodeModelReference = Pick<
+  OpenCodeAssistantMessage["model"],
+  "id" | "providerID" | "variant"
+>;
+
+export function toOpenCodeStreamParts(
+  message: OpenCodeAssistantMessage,
+): OpenCodeStreamPart[] {
+  return message.content.flatMap((part, index): OpenCodeStreamPart[] => {
+    if (part.type === "text") {
+      return [
+        {
+          type: "text",
+          id: `text-${index}`,
+          text: part.text,
+          status: { type: "complete" },
+        },
+      ];
+    }
+    if (part.type === "reasoning") {
+      if (!part.text.trim()) return [];
+      return [
+        {
+          type: "reasoning",
+          id: `reasoning-${index}`,
+          text: part.text,
+          status: { type: "complete" },
+        },
+      ];
+    }
+
+    const state = part.state;
+    const argsText =
+      state.status === "streaming"
+        ? state.input
+        : JSON.stringify(state.input);
+    let args: OpenCodeJsonObject = {};
+    if (state.status !== "streaming") {
+      try {
+        args = JSON.parse(argsText) as OpenCodeJsonObject;
+      } catch {
+        args = {};
+      }
+    }
+
+    return [
+      {
+        type: "tool-call",
+        toolCallId: part.id,
+        toolName: part.name,
+        args,
+        argsText,
+        ...(state.status === "completed"
+          ? {
+              result: state.content
+                .map((content) =>
+                  content.type === "text"
+                    ? content.text
+                    : { uri: content.uri, mime: content.mime, name: content.name },
+                )
+                .join("\\n"),
+            }
+          : {}),
+        ...(state.status === "error"
+          ? { result: state.error.message, isError: true }
+          : {}),
+      },
+    ];
+  });
+}
 
 export async function getOpenCodeModelCatalog(): Promise<OpenCodeModelCatalog> {
   const [models, providers, defaultModel] = await Promise.all([
@@ -181,6 +330,22 @@ export async function getOpenCodeModelCatalog(): Promise<OpenCodeModelCatalog> {
     providers: providers.data,
     defaultModel: defaultModel.data,
   };
+}
+
+export function listOpenCodeSkills() {
+  return client.skill.list();
+}
+
+export function activateOpenCodeSessionSkill(
+  sessionID: string,
+  id: string,
+  resume = false,
+  signal?: AbortSignal,
+) {
+  return client.session.skill(
+    { sessionID, id, resume },
+    signal ? { signal } : undefined,
+  );
 }
 
 export async function getOpenCodeSessionModel(
@@ -202,7 +367,7 @@ export function createOpenCodeSession(
   }, { signal });
 }
 
-function summarizeOpenCodeUsage(
+export function summarizeOpenCodeUsage(
   messages: OpenCodeAssistantMessage[],
 ): OpenCodeUsage | undefined {
   let cost: number | undefined;
@@ -246,17 +411,14 @@ async function getLatestTurnResponse(sessionID: string) {
       (message): message is OpenCodeAssistantMessage =>
         message.type === "assistant",
     );
-  const text = assistantMessages
-    .flatMap((message) =>
-      message.content.flatMap((part) =>
-        part.type === "text" ? [part.text] : [],
-      ),
-    )
-    .join("\n")
-    .trim();
   const usage = summarizeOpenCodeUsage(assistantMessages);
+  const model = assistantMessages.at(-1)?.model;
 
-  return { text, ...(usage ? { usage } : {}) };
+  return {
+    content: assistantMessages.flatMap(toOpenCodeStreamParts),
+    ...(usage ? { usage } : {}),
+    ...(model ? { model } : {}),
+  };
 }
 
 function createOpenCodeMessageUpdates(
@@ -264,6 +426,8 @@ function createOpenCodeMessageUpdates(
   prompt: string,
   signal: AbortSignal,
   model: OpenCodeModelSelection = DEFAULT_OPENCODE_MODEL,
+  onPromptSent?: () => void,
+  skillID?: string,
 ): Observable<OpenCodeStreamUpdate> {
   return new Observable((subscriber) => {
     if (signal.aborted) {
@@ -275,20 +439,225 @@ function createOpenCodeMessageUpdates(
     const abortRequest = () => controller.abort();
     signal.addEventListener("abort", abortRequest, { once: true });
 
-    let streamedText = "";
-    const textSubscription = openCodeEvents$
-      .pipe(
-        filter(
-          (event): event is SessionTextDeltaEvent =>
-            event.type === "session.text.delta" &&
-            event.data.sessionID === sessionID,
-        ),
-      )
-      .subscribe({
-        next: (event) => {
-          streamedText += event.data.delta;
-          subscriber.next({ type: "text", text: streamedText });
-        },
+    let promptStarted = false;
+    let resolveSessionIdle: (() => void) | undefined;
+    const sessionIdle = new Promise<void>((resolve) => {
+      resolveSessionIdle = resolve;
+    });
+    const streamParts: OpenCodeStreamPart[] = [];
+    const emitParts = () =>
+      subscriber.next({
+        type: "content" as const,
+        content: streamParts.map((part) => ({ ...part })),
+      });
+    const parseArgs = (argsText: string): OpenCodeJsonObject => {
+      try {
+        const parsed: unknown = JSON.parse(argsText);
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as OpenCodeJsonObject)
+          : {};
+      } catch {
+        return {};
+      }
+    };
+    const upsertTool = (
+      toolCallId: string,
+      toolName: string,
+      update: Partial<Extract<OpenCodeStreamPart, { type: "tool-call" }>>,
+    ) => {
+      const currentIndex = streamParts.findIndex(
+        (part) => part.type === "tool-call" && part.toolCallId === toolCallId,
+      );
+      const current = currentIndex >= 0 ? streamParts[currentIndex] : undefined;
+      const next: OpenCodeStreamPart = {
+        type: "tool-call",
+        toolCallId,
+        toolName,
+        args: current?.type === "tool-call" ? current.args : {},
+        argsText: current?.type === "tool-call" ? current.argsText : "",
+        ...update,
+      };
+      if (currentIndex >= 0) streamParts[currentIndex] = next;
+      else streamParts.push(next);
+    };
+    const eventSubscription = openCodeEvents$.subscribe({
+      next: (event) => {
+        if (
+          event.type === "session.idle" &&
+          event.data.sessionID === sessionID
+        ) {
+          if (promptStarted) resolveSessionIdle?.();
+          return;
+        }
+        if (
+          event.type === "form.created" &&
+          event.data.form.sessionID === sessionID
+        ) {
+          subscriber.next({ type: "form.created", form: event.data.form });
+          return;
+        }
+        if (
+          (event.type === "form.replied" || event.type === "form.cancelled") &&
+          event.data.sessionID === sessionID
+        ) {
+          subscriber.next({
+            type: "form.resolved",
+            formID: event.data.id,
+          });
+          return;
+        }
+        if (event.type === "session.text.delta" && event.data.sessionID === sessionID) {
+          const id = `text-${event.data.ordinal}`;
+          const current = streamParts.find(
+            (part) => part.type === "text" && part.id === id,
+          );
+          const text = current?.type === "text" ? current.text : "";
+          const next: OpenCodeStreamPart = {
+            type: "text",
+            id,
+            text: text + event.data.delta,
+            status: { type: "running" },
+          };
+          const currentIndex = streamParts.findIndex(
+            (part) => part.type === "text" && part.id === id,
+          );
+          if (currentIndex >= 0) streamParts[currentIndex] = next;
+          else streamParts.push(next);
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.reasoning.delta" &&
+          event.data.sessionID === sessionID
+        ) {
+          const id = `reasoning-${event.data.ordinal}`;
+          const current = streamParts.find(
+            (part) => part.type === "reasoning" && part.id === id,
+          );
+          const next: OpenCodeStreamPart = {
+            type: "reasoning",
+            id,
+            text:
+              (current?.type === "reasoning" ? current.text : "") +
+              event.data.delta,
+            status: { type: "running" },
+          };
+          const currentIndex = streamParts.findIndex(
+            (part) => part.type === "reasoning" && part.id === id,
+          );
+          if (currentIndex >= 0) streamParts[currentIndex] = next;
+          else streamParts.push(next);
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.input.started" &&
+          event.data.sessionID === sessionID
+        ) {
+          upsertTool(event.data.id, event.data.name, {});
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.input.delta" &&
+          event.data.sessionID === sessionID
+        ) {
+          const current = streamParts.find(
+            (part) =>
+              part.type === "tool-call" && part.toolCallId === event.data.id,
+          );
+          const argsText =
+            (current?.type === "tool-call" ? current.argsText : "") +
+            event.data.delta;
+          upsertTool(
+            event.data.id,
+            current?.type === "tool-call" ? current.toolName : "tool",
+            { argsText, args: parseArgs(argsText) },
+          );
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.input.ended" &&
+          event.data.sessionID === sessionID
+        ) {
+          const current = streamParts.find(
+            (part) =>
+              part.type === "tool-call" && part.toolCallId === event.data.id,
+          );
+          upsertTool(
+            event.data.id,
+            current?.type === "tool-call" ? current.toolName : "tool",
+            {
+              argsText: event.data.text,
+              args: parseArgs(event.data.text),
+            },
+          );
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.called" &&
+          event.data.sessionID === sessionID
+        ) {
+          const current = streamParts.find(
+            (part) =>
+              part.type === "tool-call" && part.toolCallId === event.data.id,
+          );
+          const argsText = JSON.stringify(event.data.input);
+          upsertTool(
+            event.data.id,
+            current?.type === "tool-call" ? current.toolName : "tool",
+            { argsText, args: event.data.input },
+          );
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.success" &&
+          event.data.sessionID === sessionID
+        ) {
+          const current = streamParts.find(
+            (part) =>
+              part.type === "tool-call" && part.toolCallId === event.data.id,
+          );
+          upsertTool(
+            event.data.id,
+            current?.type === "tool-call" ? current.toolName : "tool",
+            {
+              result: event.data.content.map((item) =>
+                item.type === "text"
+                  ? item.text
+                  : { uri: item.uri, mime: item.mime, name: item.name },
+              ),
+            },
+          );
+          emitParts();
+          return;
+        }
+
+        if (
+          event.type === "session.tool.failed" &&
+          event.data.sessionID === sessionID
+        ) {
+          const current = streamParts.find(
+            (part) =>
+              part.type === "tool-call" && part.toolCallId === event.data.id,
+          );
+          upsertTool(
+            event.data.id,
+            current?.type === "tool-call" ? current.toolName : "tool",
+            { result: event.data.error.message, isError: true },
+          );
+          emitParts();
+        }
+      },
         error: (cause: unknown) => {
           controller.abort();
           subscriber.error(cause);
@@ -300,24 +669,40 @@ function createOpenCodeMessageUpdates(
         await client.session.switchModel({ sessionID, model }, {
           signal: controller.signal,
         });
-        await client.session.prompt(
-          { sessionID, text: prompt },
-          { signal: controller.signal },
-        );
-        await client.session.wait(
-          { sessionID },
-          { signal: controller.signal },
-        );
+        if (skillID) {
+          await activateOpenCodeSessionSkill(
+            sessionID,
+            skillID,
+            !prompt.trim(),
+            controller.signal,
+          );
+        }
+        if (prompt.trim()) {
+          promptStarted = true;
+          await client.session.prompt(
+            { sessionID, text: prompt },
+            { signal: controller.signal },
+          );
+        }
+        onPromptSent?.();
+        await Promise.race([
+          client.session.wait(
+            { sessionID },
+            { signal: controller.signal },
+          ),
+          sessionIdle,
+        ]);
 
         if (controller.signal.aborted) return;
 
         const result = await getLatestTurnResponse(sessionID);
-        if (result.text && result.text !== streamedText) {
-          subscriber.next({ type: "text", text: result.text });
+        if (result.content.length > 0) {
+          subscriber.next({ type: "content", content: result.content });
         }
         subscriber.next({
           type: "complete",
           ...(result.usage ? { usage: result.usage } : {}),
+          ...(result.model ? { model: result.model } : {}),
         });
         subscriber.complete();
       } catch (cause) {
@@ -331,13 +716,13 @@ function createOpenCodeMessageUpdates(
         }
         if (!subscriber.closed) subscriber.error(cause);
       } finally {
-        textSubscription.unsubscribe();
+        eventSubscription.unsubscribe();
         signal.removeEventListener("abort", abortRequest);
       }
     })();
 
     return () => {
-      textSubscription.unsubscribe();
+      eventSubscription.unsubscribe();
       controller.abort();
       signal.removeEventListener("abort", abortRequest);
     };
@@ -401,8 +786,17 @@ export async function* streamOpenCodeMessage(
   prompt: string,
   signal: AbortSignal,
   model: OpenCodeModelSelection = DEFAULT_OPENCODE_MODEL,
+  onPromptSent?: () => void,
+  skillID?: string,
 ): AsyncGenerator<OpenCodeStreamUpdate, void> {
   yield* observableToAsyncGenerator(
-    createOpenCodeMessageUpdates(sessionID, prompt, signal, model),
+    createOpenCodeMessageUpdates(
+      sessionID,
+      prompt,
+      signal,
+      model,
+      onPromptSent,
+      skillID,
+    ),
   );
 }

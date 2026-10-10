@@ -59,6 +59,9 @@ importers:
       tw-shimmer:
         specifier: ^0.4.13
         version: 0.4.13(tailwindcss@3.4.19)
+      wouter:
+        specifier: ^3.13.0
+        version: 3.13.0(react@18.2.0)
       zustand:
         specifier: ^5.0.15
         version: 5.0.15(@types/react@18.2.48)(react@18.2.0)(use-sync-external-store@1.7.0(react@18.2.0))
@@ -3998,6 +4001,10 @@ packages:
   regenerator-runtime@0.13.11:
     resolution: {integrity: sha512-kY1AZVr2Ra+t+piVaJ4gxaFaReZVH40AKNo7UCX6W+dEwBo/2oZJzqfuN1qLq1oL45o56cPaTXELwrTh8Fpggg==}
 
+  regexparam@3.0.0:
+    resolution: {integrity: sha512-RSYAtP31mvYLkAHrOlh25pCNQ5hWnT106VukGaaFfuJrZFkGRX5GhUAdPqpSDXxOhA2c4akmRuplv1mRqnBn6Q==}
+    engines: {node: '>=8'}
+
   registry-auth-token@5.1.1:
     resolution: {integrity: sha512-P7B4+jq8DeD2nMsAcdfaqHbssgHtZ7Z5+++a5ask90fvmJ8p5je4mOa+wzu+DB4vQ5tdJV/xywY+UnVFeQLV5Q==}
     engines: {node: '>=14'}
@@ -4397,6 +4404,11 @@ packages:
     resolution: {integrity: sha512-N7GBZOTswtB9lkQBZA4+zAXrjEIWAUOB93AvzUiudRzRxhUdLURQ7D/gAIMY1gatT/LTbmbcv8SiYazy3eYB7w==}
     engines: {node: '>= 8'}
     hasBin: true
+
+  wouter@3.13.0:
+    resolution: {integrity: sha512-p1RoCuVyxwb3X5jLjDdkwDzlXj+/UGZqZb+806uaJOVEHvNfGkjET0KiQ/CGiDKC90rLsALMgMj4onNVKxgNdQ==}
+    peerDependencies:
+      react: '>=16.8.0'
 
   wrap-ansi@6.2.0:
     resolution: {integrity: sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==}
@@ -8630,6 +8642,8 @@ snapshots:
 
   regenerator-runtime@0.13.11: {}
 
+  regexparam@3.0.0: {}
+
   registry-auth-token@5.1.1:
     dependencies:
       '@pnpm/npm-conf': 3.0.3
@@ -9034,6 +9048,12 @@ snapshots:
   which@2.0.1:
     dependencies:
       isexe: 2.0.0
+
+  wouter@3.13.0(react@18.2.0):
+    dependencies:
+      react: 18.2.0
+      regexparam: 3.0.0
+      use-sync-external-store: 1.7.0(react@18.2.0)
 
   wrap-ansi@6.2.0:
     dependencies:

@@ -1,7 +1,9 @@
 "use client";
 
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
+import type { ReactNode } from "react";
 
+import { usePortalContainer } from "@/components/portal-context";
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({
@@ -21,6 +23,29 @@ function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
+function TooltipHint({
+  children,
+  content,
+  className,
+  side = "top",
+}: {
+  children: ReactNode;
+  content: ReactNode;
+  className?: string;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<span className={cn("inline-flex max-w-full", className)} />}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side={side}>{content}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
@@ -38,8 +63,9 @@ function TooltipContent({
     TooltipPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
+  const container = usePortalContainer();
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={container ?? undefined}>
       <TooltipPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}
@@ -66,4 +92,10 @@ function TooltipContent({
   );
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
+export {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipHint,
+  TooltipProvider,
+};

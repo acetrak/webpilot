@@ -30,6 +30,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "react-i18next";
 
 const ANIMATION_DURATION = 200;
 
@@ -139,6 +140,7 @@ function ToolFallbackTrigger({
   toolName: string;
   status?: ToolCallMessagePartStatus;
 }) {
+  const { t } = useTranslation();
   const statusType = status?.type ?? "complete";
   const isRunning = statusType === "running";
   const isCancelled =
@@ -147,12 +149,12 @@ function ToolFallbackTrigger({
   const Icon = statusIconMap[statusType];
   const label =
     statusType === "running"
-      ? "Running tool"
+      ? t("tool.running")
       : statusType === "requires-action"
-        ? "Waiting on tool"
+        ? t("tool.waiting")
         : statusType === "incomplete"
-          ? `${isCancelled ? "Cancelled" : "Failed"} tool`
-          : "Used tool";
+          ? t(isCancelled ? "tool.cancelled" : "tool.failed")
+          : t("tool.used");
 
   return (
     <CollapsibleTrigger
@@ -276,6 +278,7 @@ function ToolFallbackResult({
 }: React.ComponentProps<"div"> & {
   result?: unknown;
 }) {
+  const { t } = useTranslation();
   if (result === undefined) return null;
 
   return (
@@ -285,7 +288,7 @@ function ToolFallbackResult({
       {...props}
     >
       <p className="aui-tool-fallback-result-header text-muted-foreground text-xs font-medium">
-        Result:
+        {t("tool.resultLabel")}
       </p>
       <pre className="aui-tool-fallback-result-content bg-muted/50 text-foreground/90 mt-1 rounded-md p-2.5 text-xs whitespace-pre-wrap">
         {formatUnknownValue(result, 2)}
@@ -301,6 +304,7 @@ function ToolFallbackError({
 }: React.ComponentProps<"div"> & {
   status?: ToolCallMessagePartStatus;
 }) {
+  const { t } = useTranslation();
   if (status?.type !== "incomplete") return null;
 
   const error = status.error;
@@ -310,7 +314,7 @@ function ToolFallbackError({
   if (!errorText) return null;
 
   const isCancelled = status.reason === "cancelled";
-  const headerText = isCancelled ? "Cancelled reason:" : "Error:";
+  const headerText = t(isCancelled ? "tool.cancelledReason" : "tool.errorLabel");
 
   return (
     <div

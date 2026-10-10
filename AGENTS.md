@@ -16,6 +16,7 @@ OpenCode 服务提供 AI 对话、历史会话、模型与变体选择、网页�
 
 React 18、TypeScript 5、Plasmo 0.90、Tailwind CSS 3、Base UI、
 `@assistant-ui/react`、Zustand、RxJS、i18next / react-i18next。
+侧栏路由使用 Wouter 的 hash location。
 Markdown 展示使用 markdown-it 和 DOMPurify，网页转换使用 Turndown。
 
 使用 pnpm，并保留 `pnpm-lock.yaml` 与 `pnpm-workspace.yaml` 的构建许可配置。
@@ -37,20 +38,25 @@ README 推荐 Node.js 22 或更新版本；发布工作流使用 Node.js 22、pn
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/sidepanel.tsx` | 侧边栏入口、主题容器、导航抽屉、历史列表和工作区布局 |
+| `src/sidepanel.tsx` | Chrome Side Panel 页面入口 |
 | `src/background.ts` | 点击扩展图标时打开侧边栏 |
 | `src/components/workspace-chat.tsx` | 每个会话的挂载、可见性及 store 回调绑定 |
 | `src/components/assistant-chat.tsx` | 历史恢复、assistant-ui runtime、发送消息、自动标题、模型和网页上下文 |
 | `src/components/assistant-ui/elements/thread.aui.tsx` | 消息展示、空会话布局、输入框、编辑与消息操作 |
+| `src/components/assistant-ui/elements/session-question-form.aui.tsx` | OpenCode session form 问题表单和答复/取消交互 |
 | `src/components/assistant-ui/elements/markdown-text.tsx` | Markdown 渲染和 HTML 净化 |
 | `src/components/model-picker.tsx` | 模型、变体及“使用网页”控件 |
 | `src/components/session-list.tsx` | 从后端加载、选择和删除插件会话 |
 | `src/components/theme-provider.tsx` | 浅色、深色、系统主题状态和本地保存 |
 | `src/components/theme-picker.tsx` | 主题切换菜单 |
+| `src/pages/login/page.tsx` | OpenCode 密码验证 Dialog 页面 |
+| `src/pages/setting/page.tsx` | OpenCode 地址、端口和连接设置页 |
+| `src/pages/home/page.tsx` | 聊天首页、导航抽屉和工作区布局 |
 | `src/components/ui` | Base UI 等基础组件封装 |
 | `src/lib/stores/session-workspace.ts` | Zustand 工作区状态和会话操作 |
-| `src/lib/api/session.ts` | OpenCode 会话、模型、流式消息、取消和用量 API |
+| `src/lib/api/session.ts` | OpenCode 会话、模型、表单、流式消息、取消和用量 API |
 | `src/lib/client.ts` | OpenCode 客户端地址和认证 |
+| `src/lib/opencode-endpoint.ts` | 默认 endpoint、站点权限申请和认证挑战头过滤规则 |
 | `src/lib/page-extractor.ts` | 活动网页提取、清理和 Markdown 转换 |
 | `src/lib/i18n.ts` | 七种语言资源、语言选择和持久化 |
 | `src/styles/index.css` | 主题变量、全局样式及 Markdown 样式 |
@@ -59,6 +65,9 @@ README 推荐 Node.js 22 或更新版本；发布工作流使用 Node.js 22、pn
 | `.github/workflows` | 发布和商店提交工作流 |
 
 TypeScript 路径别名 `@/*` 指向 `src/*`。新增代码优先使用该别名。
+路由使用 `wouter/use-hash-location`，由 `/login`、`/` 和 `/settings` 管理登录、聊天和设置，
+不要依赖 History API 或改变扩展页面 pathname。
+已认证的聊天工作区在设置路由下保持挂载，避免切换页面时丢失草稿或中断流式响应。
 `session-browser.tsx` 和 `session-detail.tsx` 是独立会话视图组件；
 当前入口主要使用抽屉中的 `SessionList` 和 `WorkspaceChat`。
 
@@ -102,19 +111,19 @@ TypeScript 路径别名 `@/*` 指向 `src/*`。新增代码优先使用该别名
 ## 网页内容、认证与权限
 
 - 网页上下文是用户主动开启的功能，不要自动采集或发送活动页面内容。
-- 使用 `chrome.tabs.query` 和 `chrome.scripting.executeScript` 提取活动页面，
+- Side Panel 页面通过 `chrome.tabs.query` 和 `chrome.scripting.executeScript` 提取活动页面，
   优先选择 `article`、`main`，最后使用 `body`。
 - 当前提取 HTML 上限为 100000 字符，转换后的 Markdown 上限为 30000 字符。
   保留脚本、表单、输入框及隐藏内容清理和失败提示。
 - Markdown 禁用原始 HTML 和图片，再经 DOMPurify 净化。
   保留安全链接协议检查以及外链的 `noopener noreferrer`，不要直接渲染未净化内容。
 - 服务默认地址为 `http://127.0.0.1:4096`。清单权限目前包括
-  `activeTab`、`scripting`、`sidePanel`，主机权限包括 HTTPS 和本地 HTTP。
-  修改权限时说明实际需要，避免无关扩权。
+  `activeTab`、`scripting`、`sidePanel`、`declarativeNetRequest`、`storage`；HTTPS 为主机权限，
+  自定义 HTTP 地址通过可选主机权限在用户确认后按 origin 请求。DNR 仅移除已配置
+  OpenCode origin 的 `WWW-Authenticate` 响应头。修改权限时说明实际需要，避免无关扩权。
 - 不要在代码、日志、文档或提交中添加、复制或暴露密码和认证头。
-  当前 `src/lib/client.ts` 使用硬编码密码，与 README 的环境变量说明不一致；
-  维护认证时应先处理这一配置差异，不能假定 `.env.local` 已被客户端读取。
-  扩展打包进客户端的值也不应被视为保密存储。
+  OpenCode 地址、端口和服务密码由 Zustand 持久化到扩展页面的 `localStorage`；
+  该存储仅按扩展来源隔离，不是加密凭据库，不能视为安全秘密存储。
 
 ## 工作流
 
@@ -139,3 +148,9 @@ TypeScript 路径别名 `@/*` 指向 `src/*`。新增代码优先使用该别名
 UI 行为变更应在实际扩展中关注：空会话居中、发送后底部输入、
 会话切换只显示一个输入框、草稿和流式状态保留、历史恢复与删除、
 取消响应、网页上下文失败提示、主题切换与系统变化、多语言以及窄侧边栏布局。
+
+
+## 注意事项
+
+- 优先使用`components/ui`里面的组件
+- className聚合使用`lib/utils`下的`cn`

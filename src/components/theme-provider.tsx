@@ -7,6 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import {
+  getExtensionStorageItem,
+  setExtensionStorageItem,
+} from "@/lib/extension-storage";
 
 export type Theme = "dark" | "light" | "system";
 
@@ -14,6 +18,7 @@ type ThemeProviderProps = {
   children: ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
+  rootElement?: HTMLElement | null;
 };
 
 type ThemeProviderState = {
@@ -31,15 +36,28 @@ export function ThemeProvider({
   children,
   defaultTheme = "system",
   storageKey = "webpilot.theme",
+  rootElement,
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === "undefined") return defaultTheme;
-    const storedTheme = window.localStorage.getItem(storageKey);
-    return isTheme(storedTheme) ? storedTheme : defaultTheme;
-  });
+  const [theme, setThemeState] = useState<Theme>(defaultTheme);
 
   useEffect(() => {
-    const root = window.document.documentElement;
+    let active = true;
+    void getExtensionStorageItem(storageKey)
+      .then((storedTheme) => {
+        if (active) setThemeState(isTheme(storedTheme) ? storedTheme : defaultTheme);
+      })
+      .catch(() => {
+        if (active) setThemeState(defaultTheme);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultTheme, storageKey]);
+
+  useEffect(() => {
+    const root = rootElement === undefined ? window.document.documentElement : rootElement;
+    if (!root) return;
     const applyTheme = (dark: boolean) => {
       root.classList.toggle("dark", dark);
       root.classList.toggle("light", !dark);
@@ -55,11 +73,11 @@ export function ThemeProvider({
     updateSystemTheme();
     systemTheme.addEventListener("change", updateSystemTheme);
     return () => systemTheme.removeEventListener("change", updateSystemTheme);
-  }, [theme]);
+  }, [rootElement, theme]);
 
   const setTheme = useCallback(
     (nextTheme: Theme) => {
-      window.localStorage.setItem(storageKey, nextTheme);
+      void setExtensionStorageItem(storageKey, nextTheme).catch(() => undefined);
       setThemeState(nextTheme);
     },
     [storageKey],

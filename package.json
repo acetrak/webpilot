@@ -3,7 +3,7 @@
   "displayName": "WebPilot",
   "version": "0.0.1",
   "description": "WebPilot browser side panel for your local OpenCode server.",
-  "author": "Plasmo Corp. <foss@plasmo.com>",
+  "author": "WebPilot",
   "scripts": {
     "dev": "plasmo dev",
     "build": "plasmo build",
@@ -28,6 +28,7 @@
     "rxjs": "^7.8.2",
     "turndown": "^7.2.4",
     "tw-shimmer": "^0.4.13",
+    "wouter": "^3.13.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -43,10 +44,15 @@
     "typescript": "5.3.3"
   },
   "manifest": {
+    "optional_host_permissions": [
+      "http://*/*"
+    ],
     "permissions": [
       "activeTab",
       "scripting",
-      "sidePanel"
+      "sidePanel",
+      "declarativeNetRequest",
+      "storage"
     ],
     "host_permissions": [
       "https://*/*",

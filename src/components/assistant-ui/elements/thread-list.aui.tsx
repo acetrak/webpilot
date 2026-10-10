@@ -473,7 +473,7 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
       >
         <ThreadListItemMorePrimitive.Item
           data-slot="aui_thread-list-item-more-item"
-          className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+          className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-popover-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
           onSelect={onRename}
         >
           <PencilIcon className="size-4" />
@@ -482,7 +482,7 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
         <ThreadListItemPrimitive.Archive asChild>
           <ThreadListItemMorePrimitive.Item
             data-slot="aui_thread-list-item-more-item"
-            className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+            className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-popover-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
           >
             <ArchiveIcon className="size-4" />
             {t("threadList.archive")}

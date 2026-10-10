@@ -24,8 +24,19 @@ import {
 } from "@/components/assistant-ui/elements/tool-group.aui";
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
 import { Button, buttonVariants } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import type { OpenCodeSkill } from "@/lib/api/session";
+import {
+  WEBPAGE_CONTEXT_END,
+  WEBPAGE_CONTEXT_START,
+} from "@/lib/webpage-context";
 import {
   ActionBarMorePrimitive,
   ActionBarPrimitive,
@@ -42,6 +53,7 @@ import {
   type ImageMessagePartComponent,
   type TextMessagePartComponent,
   type ToolCallMessagePartComponent,
+  useAui,
   useAuiState,
 } from "@assistant-ui/react";
 import { useTranslation } from "react-i18next";
@@ -50,6 +62,7 @@ import {
   ArrowUpIcon,
   AudioLinesIcon,
   CheckIcon,
+  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CopyIcon,
@@ -59,6 +72,7 @@ import {
   PencilIcon,
   PhoneIcon,
   RefreshCwIcon,
+  SparklesIcon,
   SquareIcon,
   ThumbsDownIcon,
   ThumbsUpIcon,
@@ -66,8 +80,11 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
+  useState,
   type ComponentType,
   type FC,
   type PropsWithChildren,
@@ -104,6 +121,7 @@ export type ThreadComponents = {
 };
 
 const messageGroupBy = groupPartByType({
+  // @ts-ignore
   reasoning: ["group-chainOfThought", "group-reasoning"],
   // @ts-ignore
   "tool-call": ["group-chainOfThought", "group-tool"],
@@ -138,13 +156,21 @@ export type ThreadProps = {
   components?: ThreadComponents | undefined;
   autoFocus?: boolean | undefined;
   allowAttachments?: boolean | undefined;
+  beforeComposer?: ReactNode | undefined;
   footer?: ReactNode | undefined;
+  webpageContexts?: Readonly<Record<string, string>> | undefined;
+  skills?: readonly OpenCodeSkill[] | undefined;
+  skillsLoading?: boolean | undefined;
+  skillsError?: boolean | undefined;
 };
 
 const EMPTY_COMPONENTS: ThreadComponents = {};
 
 const ThreadComponentsContext =
   createContext<ThreadComponents>(EMPTY_COMPONENTS);
+const WebpageContextsContext = createContext<Readonly<Record<string, string>>>(
+  {},
+);
 
 // Startup exposes a loading placeholder thread; treat it as a new chat so
 // the composer mounts centered. Loads after startup keep the docked layout.
@@ -187,19 +213,30 @@ export const Thread: FC<ThreadProps> = ({
   components = EMPTY_COMPONENTS,
   autoFocus = true,
   allowAttachments = true,
+  beforeComposer,
   footer,
+  webpageContexts = {},
+  skills = [],
+  skillsLoading = false,
+  skillsError = false,
 }) => {
   const isEmpty = useAuiState(isNewChatView);
 
   return (
-    <ThreadComponentsContext.Provider value={components}>
-      <ThreadRoot
-        isEmpty={isEmpty}
-        autoFocus={autoFocus}
-        allowAttachments={allowAttachments}
-        footer={footer}
-      />
-    </ThreadComponentsContext.Provider>
+    <WebpageContextsContext.Provider value={webpageContexts}>
+      <ThreadComponentsContext.Provider value={components}>
+        <ThreadRoot
+          isEmpty={isEmpty}
+          autoFocus={autoFocus}
+          allowAttachments={allowAttachments}
+          skills={skills}
+          skillsLoading={skillsLoading}
+          skillsError={skillsError}
+          beforeComposer={beforeComposer}
+          footer={footer}
+        />
+      </ThreadComponentsContext.Provider>
+    </WebpageContextsContext.Provider>
   );
 };
 
@@ -207,11 +244,19 @@ const ThreadRoot: FC<{
   isEmpty: boolean;
   autoFocus: boolean;
   allowAttachments: boolean;
+  skills: readonly OpenCodeSkill[];
+  skillsLoading: boolean;
+  skillsError: boolean;
+  beforeComposer?: ReactNode | undefined;
   footer?: ReactNode | undefined;
 }> = ({
   isEmpty,
   autoFocus,
   allowAttachments,
+  skills,
+  skillsLoading,
+  skillsError,
+  beforeComposer,
   footer,
 }) => {
   const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
@@ -237,10 +282,14 @@ const ThreadRoot: FC<{
             <div className="my-auto flex w-full flex-col">
               <div className="mx-auto w-full max-w-3xl">
                 <Welcome />
+                {beforeComposer}
                 <div className="flex flex-col gap-4">
                   <Composer
                     autoFocus={autoFocus}
                     allowAttachments={allowAttachments}
+                    skills={skills}
+                    skillsLoading={skillsLoading}
+                    skillsError={skillsError}
                   />
                   <AuiIf
                     condition={(s) => isNewChatView(s) && s.composer.isEmpty}
@@ -271,9 +320,13 @@ const ThreadRoot: FC<{
             <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-[var(--composer-radius)] bg-background pb-4 md:pb-6">
               <ThreadScrollToBottom />
               <ThreadFollowupSuggestions />
+              {beforeComposer}
               <Composer
                 autoFocus={autoFocus}
                 allowAttachments={allowAttachments}
+                skills={skills}
+                skillsLoading={skillsLoading}
+                skillsError={skillsError}
               />
               {footer}
             </ThreadPrimitive.ViewportFooter>
@@ -476,7 +529,7 @@ const ThreadScrollToBottom: FC = () => {
       <TooltipIconButton
         tooltip={t("thread.scrollToBottom")}
         variant="outline"
-        className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background dark:hover:bg-accent absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible"
+        className="aui-thread-scroll-to-bottom dark:border-border dark:bg-background hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-foreground absolute -top-12 z-10 self-center rounded-full p-4 disabled:invisible"
       >
         <ArrowDownIcon />
       </TooltipIconButton>
@@ -485,10 +538,12 @@ const ThreadScrollToBottom: FC = () => {
 };
 
 const ThreadWelcome: FC = () => {
+  const { t } = useTranslation();
+
   return (
     <div className="aui-thread-welcome-root mb-6 flex flex-col px-2">
       <p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-medium tracking-tight duration-200">
-        How can I help you today?
+        {t("thread.welcomeMessage")}
       </p>
     </div>
   );
@@ -531,8 +586,63 @@ const ThreadSuggestionItem: FC = () => {
 const Composer: FC<{
   autoFocus: boolean;
   allowAttachments: boolean;
-}> = ({ autoFocus, allowAttachments }) => {
+  skills: readonly OpenCodeSkill[];
+  skillsLoading: boolean;
+  skillsError: boolean;
+}> = ({ autoFocus, allowAttachments, skills, skillsLoading, skillsError }) => {
   const { t } = useTranslation();
+  const aui = useAui();
+  const composerText = useAuiState((s) => s.composer.text);
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState(0);
+  const [dismissedText, setDismissedText] = useState<string | null>(null);
+  const previousTextRef = useRef(composerText);
+  const skillQuery = composerText.match(/^\/([^\s/]*)$/)?.[1] ?? null;
+  const matchingSkills = useMemo(() => {
+    const query = skillQuery?.toLocaleLowerCase() ?? "";
+    return skills.filter((skill) =>
+      [skill.id, skill.name, skill.description ?? ""].some((value) =>
+        value.toLocaleLowerCase().includes(query),
+      ),
+    );
+  }, [skillQuery, skills]);
+  const isSkillMenuOpen =
+    skillQuery !== null && dismissedText !== composerText;
+
+  useEffect(() => {
+    if (previousTextRef.current !== composerText) {
+      previousTextRef.current = composerText;
+      setDismissedText(null);
+    }
+  }, [composerText]);
+
+  useEffect(() => {
+    setSelectedSkillIndex(0);
+  }, [skillQuery]);
+
+  const chooseSkill = (skill: OpenCodeSkill) => {
+    aui.composer.setText(`/${skill.id} `);
+  };
+
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!isSkillMenuOpen) return;
+
+    if (event.key === "ArrowDown" && matchingSkills.length > 0) {
+      event.preventDefault();
+      setSelectedSkillIndex((index) => (index + 1) % matchingSkills.length);
+    } else if (event.key === "ArrowUp" && matchingSkills.length > 0) {
+      event.preventDefault();
+      setSelectedSkillIndex(
+        (index) => (index - 1 + matchingSkills.length) % matchingSkills.length,
+      );
+    } else if (event.key === "Enter" && matchingSkills.length > 0) {
+      event.preventDefault();
+      chooseSkill(matchingSkills[selectedSkillIndex]);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setDismissedText(composerText);
+    }
+  };
+
   const shell = (
     <div
       data-slot="aui_composer-shell"
@@ -544,10 +654,69 @@ const Composer: FC<{
         className="aui-composer-input caret-primary placeholder:text-muted-foreground/60 max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-1 text-base leading-6 outline-none"
         rows={1}
         autoFocus={autoFocus}
+        onKeyDown={handleInputKeyDown}
         // @ts-ignore
         enterKeyHint="send"
         aria-label={t("thread.composerAria")}
+        aria-expanded={isSkillMenuOpen}
+        aria-controls={isSkillMenuOpen ? "aui-skill-suggestions" : undefined}
+        aria-activedescendant={
+          isSkillMenuOpen && matchingSkills.length > 0
+            ? `aui-skill-option-${selectedSkillIndex}`
+            : undefined
+        }
       />
+      {isSkillMenuOpen ? (
+        <div
+          id="aui-skill-suggestions"
+          role="listbox"
+          aria-label={t("thread.skillsLabel")}
+          className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-56 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+        >
+          {skillsLoading ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              {t("thread.skillsLoading")}
+            </p>
+          ) : skillsError ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              {t("thread.skillsLoadError")}
+            </p>
+          ) : matchingSkills.length === 0 ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              {t("thread.skillsEmpty")}
+            </p>
+          ) : (
+            matchingSkills.map((skill, index) => (
+              <button
+                key={skill.id}
+                id={`aui-skill-option-${index}`}
+                type="button"
+                role="option"
+                aria-selected={index === selectedSkillIndex}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setSelectedSkillIndex(index)}
+                onClick={() => chooseSkill(skill)}
+                className={cn(
+                  "flex w-full items-start gap-2 rounded-sm px-2.5 py-2 text-left text-sm outline-none",
+                  index === selectedSkillIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-accent/60 hover:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-foreground",
+                )}
+              >
+                <SparklesIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{skill.id}</span>
+                  {skill.description ? (
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {skill.description}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      ) : null}
       <ComposerAction allowAttachments={allowAttachments} />
     </div>
   );
@@ -709,7 +878,9 @@ const AssistantMessage: FC = () => {
                   return <ToolGroup group={part}>{children}</ToolGroup>;
                 }
                 return (
-                  <ToolGroupRoot variant="ghost">
+                  <ToolGroupRoot
+                    variant="ghost"
+                  >
                     <ToolGroupTrigger
                       count={part.indices.length}
                       active={part.status.type === "running"}
@@ -725,7 +896,7 @@ const AssistantMessage: FC = () => {
                 }
                 const running = part.status.type === "running";
                 return (
-                  <ReasoningRoot streaming={running}>
+                  <ReasoningRoot>
                     <ReasoningTrigger
                       active={running}
                       duration={reasoningDuration(part.timing)}
@@ -758,13 +929,15 @@ const AssistantMessage: FC = () => {
                 );
               case "indicator":
                 return (
-                  <span
+                  <div
                     data-slot="aui_assistant-message-indicator"
-                    className="animate-pulse font-sans"
-                    aria-label={t("thread.assistantWorking")}
+                    aria-live="polite"
+                    className="text-muted-foreground flex items-center gap-2 py-1 text-sm"
+                    role="status"
                   >
-                    {"●"}
-                  </span>
+                    <span className="size-3 animate-spin rounded-full border-2 border-current border-r-transparent" />
+                    {t("thread.assistantWorking")}
+                  </div>
                 );
               default:
                 return null;
@@ -828,19 +1001,20 @@ const AssistantActionBar: FC = () => {
         </TooltipIconButton>
       </ActionBarPrimitive.Reload>
       <ActionBarMorePrimitive.Root>
-        <ActionBarMorePrimitive.Trigger asChild>
-          <button
-            type="button"
-            aria-label={t("thread.moreActions")}
-            title={t("thread.moreActions")}
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "icon" }),
-              "aui-button-icon size-6 p-1 active:scale-90 data-[state=open]:bg-accent",
-            )}
-          >
-            <MoreHorizontalIcon aria-hidden="true" />
-          </button>
-        </ActionBarMorePrimitive.Trigger>
+        <TooltipHint content={t("thread.moreActions")}>
+          <ActionBarMorePrimitive.Trigger asChild>
+            <button
+              type="button"
+              aria-label={t("thread.moreActions")}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "aui-button-icon size-6 p-1 active:scale-90 data-[state=open]:bg-accent",
+              )}
+            >
+              <MoreHorizontalIcon aria-hidden="true" />
+            </button>
+          </ActionBarMorePrimitive.Trigger>
+        </TooltipHint>
         <ActionBarMorePrimitive.Content
           side="bottom"
           align="start"
@@ -848,7 +1022,7 @@ const AssistantActionBar: FC = () => {
           className="aui-action-bar-more-content bg-popover text-popover-foreground data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:animate-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] overflow-hidden rounded-xl border p-1.5"
         >
           <ActionBarPrimitive.ExportMarkdown asChild>
-            <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">
+            <ActionBarMorePrimitive.Item className="aui-action-bar-more-item hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-popover-foreground flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none">
               <DownloadIcon className="size-4" />
               {t("thread.exportMarkdown")}
             </ActionBarMorePrimitive.Item>
@@ -865,6 +1039,75 @@ const UserFilePart: FileMessagePartComponent = (part) => (
   </div>
 );
 
+type UserTextSegment =
+  | { type: "text"; text: string }
+  | { type: "webpage"; text: string };
+
+function splitWebpageContext(text: string): UserTextSegment[] {
+  const segments: UserTextSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const start = text.indexOf(WEBPAGE_CONTEXT_START, cursor);
+    if (start < 0) {
+      segments.push({ type: "text", text: text.slice(cursor) });
+      break;
+    }
+
+    const end = text.indexOf(WEBPAGE_CONTEXT_END, start + WEBPAGE_CONTEXT_START.length);
+    if (end < 0) {
+      segments.push({ type: "text", text: text.slice(cursor) });
+      break;
+    }
+
+    if (start > cursor) {
+      segments.push({ type: "text", text: text.slice(cursor, start) });
+    }
+    segments.push({
+      type: "webpage",
+      text: text.slice(start + WEBPAGE_CONTEXT_START.length, end).trim(),
+    });
+    cursor = end + WEBPAGE_CONTEXT_END.length;
+  }
+
+  return segments;
+}
+
+const UserTextPart: TextMessagePartComponent = ({ text }) => {
+  const segments = splitWebpageContext(text);
+
+  if (segments.length === 1 && segments[0].type === "text") {
+    return <MarkdownText text={text} />;
+  }
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {segments.map((segment, index) =>
+        segment.type === "text" ? (
+          segment.text ? <MarkdownText key={index} text={segment.text} /> : null
+        ) : (
+          <WebpageContextDisclosure key={index} text={segment.text} />
+        ),
+      )}
+    </div>
+  );
+};
+
+const WebpageContextDisclosure: FC<{ text: string }> = ({ text }) => {
+  const { t } = useTranslation();
+  return (
+    <Collapsible className="group/collapsible rounded-lg border border-border/70 bg-background/60">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground">
+        <span>{t("website.contextToggle")}</span>
+        <ChevronDownIcon className="ml-auto size-3.5 transition-transform group-data-open/collapsible:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t border-border/70 px-3 py-2 text-sm">
+        <MarkdownText text={text} />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
 const UserImagePart: ImageMessagePartComponent = (part) => (
   <div data-slot="aui_user-message-image" className="py-1">
     <Image {...part} />
@@ -872,6 +1115,9 @@ const UserImagePart: ImageMessagePartComponent = (part) => (
 );
 
 const UserMessage: FC = () => {
+  const messageID = useAuiState((s) => s.message.id);
+  const webpageContext = useContext(WebpageContextsContext)[messageID];
+
   return (
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"
@@ -883,8 +1129,17 @@ const UserMessage: FC = () => {
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-[var(--composer-radius)] px-4 py-2 text-base break-words empty:hidden">
           <MessagePrimitive.Parts
-            components={{ File: UserFilePart, Image: UserImagePart }}
+            components={{
+              Text: UserTextPart,
+              File: UserFilePart,
+              Image: UserImagePart,
+            }}
           />
+          {webpageContext ? (
+            <div className="mt-2">
+              <WebpageContextDisclosure text={webpageContext} />
+            </div>
+          ) : null}
         </div>
         <div className="aui-user-action-bar-wrapper absolute start-0 top-1/2 -translate-x-full -translate-y-1/2 pe-2 peer-empty:hidden rtl:translate-x-full">
           <UserActionBar />

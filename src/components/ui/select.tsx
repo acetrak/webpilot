@@ -4,6 +4,7 @@ import * as React from "react";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import { cn } from "cn";
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
+import { usePortalContainer } from "@/components/portal-context";
 
 const Select = SelectPrimitive.Root;
 
@@ -69,8 +70,9 @@ function SelectContent({
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
+  const container = usePortalContainer();
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={container ?? undefined}>
       <SelectPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
@@ -119,7 +121,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-popover-foreground dark:hover:**:text-popover-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className,
       )}
       {...props}

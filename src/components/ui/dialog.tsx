@@ -7,9 +7,10 @@ import { XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "react-i18next";
+import { usePortalContainer } from "@/components/portal-context";
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+  return <DialogPrimitive.Root modal={false}  data-slot="dialog" {...props} />;
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -17,7 +18,14 @@ function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
 }
 
 function DialogPortal({ ...props }: DialogPrimitive.Portal.Props) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
+  const container = usePortalContainer();
+  return (
+    <DialogPrimitive.Portal
+      container={container ?? undefined}
+      data-slot="dialog-portal"
+      {...props}
+    />
+  );
 }
 
 function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
@@ -32,7 +40,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs",
+        "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 fixed inset-0 isolate z-50 bg-black/30 backdrop-blur-sm duration-100",
         className,
       )}
       {...props}

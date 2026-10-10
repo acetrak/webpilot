@@ -26,7 +26,7 @@ export function SessionBrowser({
         <header className="mb-6">
           <div className="flex items-center justify-between gap-3">
             <button
-              className="inline-flex min-w-0 items-center gap-2 rounded-lg py-1 text-left text-sm font-semibold text-slate-700 transition hover:text-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/30 dark:text-neutral-300 dark:hover:text-emerald-300"
+              className="inline-flex min-w-0 items-center gap-2 rounded-lg py-1 text-left text-sm font-semibold text-slate-700 transition hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 dark:text-neutral-300 dark:hover:text-neutral-300"
               onClick={onClose}
               type="button"
             >

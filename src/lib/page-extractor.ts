@@ -1,13 +1,19 @@
-/// <reference types="chrome" />
-
 import TurndownService from "turndown";
 import i18n from "@/lib/i18n";
 
 export type ExtractedPage = {
   title: string;
   url: string;
+  icon: string;
   html: string;
 };
+
+export class UnsupportedWebsiteProtocolError extends Error {
+  constructor() {
+    super(i18n.t("website.httpsRequired"));
+    this.name = "UnsupportedWebsiteProtocolError";
+  }
+}
 
 const turndownService = new TurndownService({
   headingStyle: "atx",
@@ -37,12 +43,17 @@ export function pageHtmlToMarkdown(html: string) {
 export async function extractActivePage(): Promise<ExtractedPage> {
   const [tab] = await chrome.tabs.query({
     active: true,
-    currentWindow: true,
+    lastFocusedWindow: true,
   });
+  if (tab?.id === undefined) throw new Error(i18n.t("website.cannotReadTab"));
+  if (!tab.url?.startsWith("https://")) {
+    throw new UnsupportedWebsiteProtocolError();
+  }
 
-  if (!tab?.id) throw new Error(i18n.t("website.cannotReadTab"));
-
-  const [injection] = await chrome.scripting.executeScript<[], ExtractedPage>({
+  const [injection] = await chrome.scripting.executeScript<
+    [],
+    Omit<ExtractedPage, "icon">
+  >({
     target: { tabId: tab.id },
     func: () => ({
       title: document.title,
@@ -52,20 +63,19 @@ export async function extractActivePage(): Promise<ExtractedPage> {
           document.querySelector("article") ??
           document.querySelector("main") ??
           document.body;
-        const container = document.createElement("div");
-        container.innerHTML = content?.innerHTML ?? "";
-        container
+        const clone = content?.cloneNode(true) as Element | undefined;
+        if (!clone) return "";
+        clone
           .querySelectorAll(
             "script,style,noscript,iframe,svg,button,form,input,textarea,select,[hidden],[aria-hidden='true']",
           )
           .forEach((element) => element.remove());
-        return container.innerHTML.slice(0, 100000);
+        return clone.innerHTML.slice(0, 100000);
       })(),
     }),
   });
 
   const page = injection?.result;
   if (!page?.html) throw new Error(i18n.t("website.noPageContent"));
-
-  return page;
+  return { ...page, icon: tab.favIconUrl ?? "" };
 }

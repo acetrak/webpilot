@@ -14,10 +14,12 @@ import type {
   OpenCodeModelCatalog,
   OpenCodeModelSelection,
 } from "@/lib/api/session";
+import { TooltipHint } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import {
   CheckIcon,
   ChevronDownIcon,
-  GlobeIcon,
+  PlusIcon,
   SparklesIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -33,7 +35,7 @@ type ModelPickerProps = {
   websiteEnabled: boolean;
   websiteLoading: boolean;
   websiteError: string;
-  onToggleWebsite: () => void;
+  onAddWebsite: () => void;
 };
 
 function formatVariant(
@@ -56,7 +58,7 @@ export function ModelPicker({
   websiteEnabled,
   websiteLoading,
   websiteError,
-  onToggleWebsite,
+  onAddWebsite,
 }: ModelPickerProps) {
   const { t } = useTranslation();
   const selectedModel = catalog.models.find(
@@ -104,44 +106,43 @@ export function ModelPicker({
   return (
     <div className="flex min-w-0 items-center justify-between gap-2">
       <div className="flex min-w-0 flex-col gap-1">
-        <button
-          type="button"
-          aria-pressed={websiteEnabled}
-          aria-label={websiteEnabled ? t("website.stop") : t("website.use")}
-          title={websiteError || t("website.title")}
-          disabled={websiteLoading}
-          onClick={onToggleWebsite}
-          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70 ${
-            websiteEnabled
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900"
-              : "border-border/70 bg-background/80 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          }`}
-        >
-          {websiteLoading ? (
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
-          ) : (
-            <GlobeIcon className="size-3.5 shrink-0" />
-          )}
-          <span>{websiteLoading ? t("website.reading") : t("website.use")}</span>
-          {websiteEnabled && !websiteLoading && (
-            <CheckIcon className="size-3.5 shrink-0" />
-          )}
-        </button>
-        {websiteError && (
-          <span
-            className="max-w-48 truncate px-2 text-[10px] text-destructive"
-            role="status"
-            title={websiteError}
+        <TooltipHint content={t("website.title")}>
+          <button
+            type="button"
+            aria-label={t("website.add")}
+            disabled={websiteLoading}
+            onClick={onAddWebsite}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-70",
+              websiteEnabled
+                ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15 dark:border-primary/40 dark:bg-primary/15 dark:text-primary dark:hover:bg-accent/20 dark:hover:text-primary"
+                : "border-border/70 bg-background/80 text-muted-foreground hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-muted-foreground",
+            )}
           >
-            {t("website.retryError")}
-          </span>
+            {websiteLoading ? (
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+            ) : (
+              <PlusIcon className="size-3.5 shrink-0" />
+            )}
+            <span>{websiteLoading ? t("website.reading") : t("website.add")}</span>
+          </button>
+        </TooltipHint>
+        {websiteError && (
+          <TooltipHint content={websiteError} className="max-w-48">
+            <span
+              className="max-w-48 truncate px-2 text-[10px] text-destructive"
+              role="status"
+            >
+              {t("website.retryError")}
+            </span>
+          </TooltipHint>
         )}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger
           type="button"
           aria-label={t("model.pickerAria")}
-          className="inline-flex max-w-full items-center gap-2 self-start rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex max-w-full items-center gap-2 self-start rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/20 dark:hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <SparklesIcon className="size-3.5 shrink-0" />
           <span className="max-w-40 truncate font-medium text-foreground">
@@ -174,9 +175,10 @@ export function ModelPicker({
           <DropdownMenuSeparator />
 
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="w-full justify-between">
+            <DropdownMenuSubTrigger className="w-full">
               <span>{t("model.effort")}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
+              <span className="block flex-1"></span>
+              <span className="text-xs text-muted-foreground block">
                 {selectedVariant}
               </span>
             </DropdownMenuSubTrigger>
